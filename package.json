@@ -1,0 +1,28 @@
+{
+  "name": "roblox-launcher",
+  "productName": "Roblox",
+  "version": "1.0.0",
+  "description": "A very convincing Roblox launcher. Totally.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "demo": "electron . --demo",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.example.robloxlauncher",
+    "productName": "Roblox",
+    "files": ["src/**/*", "renderer/**/*", "package.json"],
+    "win": {
+      "target": "portable",
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "RobloxPlayer.exe"
+    }
+  }
+}

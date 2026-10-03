@@ -1,0 +1,20 @@
+name: Build Windows exe
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/practical-cray-ld83r0]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RobloxPlayer
+          path: dist/RobloxPlayer.exe
