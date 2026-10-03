@@ -19,7 +19,9 @@ const likes = (g) => 84 + (hash(g.appid) % 15);
 const players = (g) => 800 + (hash(g.appid + 1) % 90000);
 const visits = (g) => 5 + (hash(g.appid + 2) % 900);
 const fmtCount = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K' : String(n));
-const cdnArt = (g) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/header.jpg`;
+const CDN = 'https://cdn.cloudflare.steamstatic.com/steam/apps';
+const cdnWide = (g) => [`${CDN}/${g.appid}/header.jpg`, `${CDN}/${g.appid}/capsule_616x353.jpg`, `${CDN}/${g.appid}/library_hero.jpg`];
+const cdnPortrait = (g) => [`${CDN}/${g.appid}/library_600x900.jpg`];
 
 function el(html) {
   const t = document.createElement('template');
@@ -28,31 +30,58 @@ function el(html) {
 }
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// Local Steam art first, then the Steam CDN, then a plain text placeholder.
-function artImg(g) {
+// Tiles are square, so they prefer portrait cover art (crops well). Wide art is
+// shown whole over a blurred copy of itself rather than cropped. Fallback chain:
+// local Steam cache, CDN variants, the store API's own image URL, text placeholder.
+function artImg(g, kind) {
+  const wideFirst = kind === 'wide';
+  const sources = (wideFirst
+    ? [g.art, ...cdnWide(g), g.portrait, ...cdnPortrait(g)]
+    : [g.portrait, ...cdnPortrait(g), g.art, ...cdnWide(g)]
+  ).filter(Boolean);
+
+  const box = document.createElement('div');
+  box.className = 'art';
+  const bg = document.createElement('img');
+  bg.className = 'bg';
+  bg.alt = '';
   const img = document.createElement('img');
+  img.className = 'fg';
   img.alt = '';
   img.draggable = false;
+  box.append(bg, img);
+
   let tried = 0;
-  const sources = [g.art, cdnArt(g)].filter(Boolean);
-  img.onerror = () => {
+  let askedStore = false;
+  const placeholder = () => {
+    const ph = document.createElement('div');
+    ph.className = 'ph';
+    ph.textContent = g.name;
+    box.replaceWith(ph);
+  };
+  img.onload = () => {
+    bg.src = img.src;
+    // Image shape doesn't match its box: show it whole instead of cropping.
+    const ratio = img.naturalWidth / img.naturalHeight;
+    box.classList.toggle('contain', wideFirst ? ratio < 1.5 : ratio > 1.25);
+  };
+  img.onerror = async () => {
     tried++;
-    if (tried < sources.length) img.src = sources[tried];
-    else {
-      const ph = document.createElement('div');
-      ph.className = 'ph';
-      ph.textContent = g.name;
-      img.replaceWith(ph);
-    }
+    if (tried < sources.length) return void (img.src = sources[tried]);
+    if (askedStore) return placeholder();
+    askedStore = true;
+    const url = await window.api.storeArt(g.appid);
+    if (url) img.src = url;
+    else placeholder();
   };
   img.src = sources[0];
-  return img;
+  return box;
 }
 
 function tile(g) {
   const t = el(`<div class="tile"><div class="thumb"></div><div class="title">${esc(g.name)}</div>
     <div class="stats"><span>${ICON_UP}${likes(g)}%</span><span>${ICON_USER}${fmtCount(players(g))}</span></div></div>`);
-  t.querySelector('.thumb').appendChild(artImg(g));
+  t.querySelector('.thumb').appendChild(artImg(g, 'tile'));
   t.onclick = () => showGame(g);
   return t;
 }
@@ -113,7 +142,7 @@ function showGame(g) {
       <div><small>Visits</small><b>${visits(g)}M+</b></div>
       <div><small>Server Size</small><b>${2 + (hash(g.appid + 3) % 30)}</b></div>
     </div></div>`);
-  page.querySelector('.hero').appendChild(artImg(g));
+  page.querySelector('.hero').appendChild(artImg(g, 'wide'));
   page.querySelector('.back').onclick = showHome;
   page.querySelector('.play').onclick = () => play(g);
   main.appendChild(page);

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, net, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -30,8 +30,32 @@ ipcMain.handle('library', () => {
   const lib = DEMO ? { persona: 'Player', games: DEMO_GAMES } : loadLibrary(cfg.steamPath);
   return {
     persona: cfg.name || lib.persona || 'Player',
-    games: lib.games.map((g) => ({ ...g, art: g.art ? pathToFileURL(g.art).href : null })),
+    games: lib.games.map((g) => ({
+      ...g,
+      art: g.art ? pathToFileURL(g.art).href : null,
+      portrait: g.portrait ? pathToFileURL(g.portrait).href : null,
+    })),
   };
+});
+
+// Last-resort art lookup: ask the Steam store for the app's real image URL
+// (covers apps whose images live under hashed CDN paths, e.g. many demos).
+const storeArtCache = new Map();
+ipcMain.handle('storeArt', async (_e, appid) => {
+  if (!/^\d+$/.test(String(appid))) return null;
+  if (storeArtCache.has(appid)) return storeArtCache.get(appid);
+  let url = null;
+  try {
+    const res = await net.fetch(
+      `https://store.steampowered.com/api/appdetails?appids=${appid}&filters=basic`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const data = (await res.json())[appid];
+    const d = data && data.success && data.data;
+    url = (d && (d.header_image || d.capsule_image)) || null;
+  } catch {}
+  storeArtCache.set(appid, url);
+  return url;
 });
 
 ipcMain.handle('launch', (_e, appid) => {

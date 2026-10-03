@@ -110,24 +110,50 @@ function libraryDirs(root) {
 const NOT_GAMES = /^(Steamworks Common Redistributables|Steam Linux Runtime|Proton|SteamVR|Steam Controller Configs)/i;
 
 // Steam keeps cover art in appcache/librarycache. Older clients use flat
-// "<appid>_header.jpg"; newer ones use "<appid>/<hash>/header.jpg".
-function localArt(root, appid) {
+// "<appid>_header.jpg"; newer ones use "<appid>/<hash>/<name>". Demos, playtests
+// and prologues often only have some of the images, so take the best one found.
+const PORTRAIT_ART = [/^library_600x900\.(jpg|png)$/i, /^library_capsule\.(jpg|png)$/i];
+const WIDE_ART = [
+  /^(library_)?header\.(jpg|png)$/i,
+  /^capsule_616x353\.(jpg|png)$/i,
+  /^library_capsule\.(jpg|png)$/i,
+  /^capsule_.*\.(jpg|png)$/i,
+  /^library_hero\.(jpg|png)$/i,
+  /\.(jpg|jpeg)$/i,
+];
+
+function localArt(root, appid, priority) {
   const cache = path.join(root, 'appcache', 'librarycache');
-  const flat = path.join(cache, `${appid}_header.jpg`);
-  if (fs.existsSync(flat)) return flat;
-  const dir = path.join(cache, String(appid));
+  let best = null;
+  let bestRank = priority.length;
+  const consider = (name, full) => {
+    if (/^logo/i.test(name)) return;
+    const rank = priority.findIndex((re) => re.test(name));
+    if (rank !== -1 && rank < bestRank) {
+      best = full;
+      bestRank = rank;
+    }
+  };
+  // Flat layout: <appid>_header.jpg, <appid>_library_600x900.jpg, ...
   try {
-    const stack = [dir];
+    const prefix = `${appid}_`;
+    for (const f of fs.readdirSync(cache)) {
+      if (f.startsWith(prefix)) consider(f.slice(prefix.length), path.join(cache, f));
+    }
+  } catch {}
+  // Nested layout: <appid>/<hash>/<name>
+  try {
+    const stack = [path.join(cache, String(appid))];
     while (stack.length) {
       const d = stack.pop();
       for (const e of fs.readdirSync(d, { withFileTypes: true })) {
         const full = path.join(d, e.name);
         if (e.isDirectory()) stack.push(full);
-        else if (e.name === 'header.jpg') return full;
+        else consider(e.name, full);
       }
     }
   } catch {}
-  return null;
+  return best;
 }
 
 function personaName(root) {
@@ -160,7 +186,8 @@ function loadLibrary(steamPathOverride) {
         name: state.name,
         lastPlayed: Number(state.LastPlayed) || 0,
         sizeOnDisk: Number(state.SizeOnDisk) || 0,
-        art: localArt(root, state.appid),
+        art: localArt(root, state.appid, WIDE_ART),
+        portrait: localArt(root, state.appid, PORTRAIT_ART),
       });
     }
   }
