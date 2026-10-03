@@ -24,11 +24,16 @@ Tips for the full effect: put the exe on her desktop, rename it, and give the sh
 Create `config.json` next to the exe:
 
 ```json
-{ "steamPath": "D:\\Steam", "name": "Her Name" }
+{ "steamPath": "D:\\Steam", "name": "Her Name", "decoyAppId": 1145360 }
 ```
 
 - `steamPath`: only needed if Steam isn't auto-detected.
 - `name`: overrides the Steam display name used in the greeting.
+- `decoyAppId`: the Steam app id that the fake **Adopt Me!** tile really launches. Defaults to her most recently played game.
+
+## The Adopt Me! decoy
+
+The first tile is a fake **Adopt Me!** entry. Its images are fetched from Roblox's public thumbnail API when the launcher starts (it falls back to a plain title card if she's offline). Pressing Play on it shows the normal "Starting Roblox..." splash, then launches a real Steam game (see `decoyAppId`).
 
 ## Notes
 

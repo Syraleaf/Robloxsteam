@@ -25,17 +25,58 @@ const DEMO_GAMES = [
   [292030, 'The Witcher 3: Wild Hunt'],
 ].map(([appid, name], i) => ({ appid, name, lastPlayed: 1e9 - i, sizeOnDisk: 0, art: null }));
 
-ipcMain.handle('library', () => {
-  const cfg = readConfig();
-  const lib = DEMO ? { persona: 'Player', games: DEMO_GAMES } : loadLibrary(cfg.steamPath);
+// Decoy tile: looks like Adopt Me! (art is fetched from Roblox's public thumbnail
+// API at startup). Pressing Play on it launches a real Steam game instead.
+const ADOPT_ME_UNIVERSE = 383310974;
+
+async function robloxJson(url) {
+  try {
+    const res = await net.fetch(url, { signal: AbortSignal.timeout(4000) });
+    return (await res.json()).data || [];
+  } catch {
+    return [];
+  }
+}
+
+async function adoptMeArt() {
+  const base = 'https://thumbnails.roblox.com/v1/games';
+  const [icons, thumbs] = await Promise.all([
+    robloxJson(`${base}/icons?universeIds=${ADOPT_ME_UNIVERSE}&size=512x512&format=Png&isCircular=false`),
+    robloxJson(`${base}/multiget/thumbnails?universeIds=${ADOPT_ME_UNIVERSE}&countPerUniverse=1&size=768x432&format=Png&isCircular=false`),
+  ]);
+  const ok = (t) => (t && t.state === 'Completed' && t.imageUrl) || null;
   return {
-    persona: cfg.name || lib.persona || 'Player',
-    games: lib.games.map((g) => ({
-      ...g,
-      art: g.art ? pathToFileURL(g.art).href : null,
-      portrait: g.portrait ? pathToFileURL(g.portrait).href : null,
-    })),
+    portrait: ok(icons[0]),
+    art: ok(thumbs[0] && thumbs[0].thumbnails && thumbs[0].thumbnails[0]),
   };
+}
+
+ipcMain.handle('library', async () => {
+  const cfg = readConfig();
+  const [lib, decoyArt] = await Promise.all([
+    Promise.resolve(DEMO ? { persona: 'Player', games: DEMO_GAMES } : loadLibrary(cfg.steamPath)),
+    adoptMeArt(),
+  ]);
+  const real = lib.games.map((g) => ({
+    ...g,
+    art: g.art ? pathToFileURL(g.art).href : null,
+    portrait: g.portrait ? pathToFileURL(g.portrait).href : null,
+  }));
+  const decoy = {
+    decoy: true,
+    appid: 920587237,
+    name: 'Adopt Me!',
+    by: 'Uplift Games',
+    likes: 92,
+    players: 187000,
+    visits: '40B+',
+    serverSize: 48,
+    lastPlayed: 4e9,
+    ...decoyArt,
+    // What Play really launches: config "decoyAppId", else her most recent game.
+    decoyTarget: cfg.decoyAppId || (real[0] && real[0].appid) || null,
+  };
+  return { persona: cfg.name || lib.persona || 'Player', games: [decoy, ...real] };
 });
 
 // Last-resort art lookup: ask the Steam store for the app's real image URL

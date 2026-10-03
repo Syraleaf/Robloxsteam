@@ -15,9 +15,10 @@ function hash(n) {
   h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; h ^= h >>> 13;
   return h >>> 0;
 }
-const likes = (g) => 84 + (hash(g.appid) % 15);
-const players = (g) => 800 + (hash(g.appid + 1) % 90000);
-const visits = (g) => 5 + (hash(g.appid + 2) % 900);
+const likes = (g) => g.likes ?? 84 + (hash(g.appid) % 15);
+const players = (g) => g.players ?? 800 + (hash(g.appid + 1) % 90000);
+const visits = (g) => g.visits ?? `${5 + (hash(g.appid + 2) % 900)}M+`;
+const serverSize = (g) => g.serverSize ?? 2 + (hash(g.appid + 3) % 30);
 const fmtCount = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K' : String(n));
 const CDN = 'https://cdn.cloudflare.steamstatic.com/steam/apps';
 const cdnWide = (g) => [`${CDN}/${g.appid}/header.jpg`, `${CDN}/${g.appid}/capsule_616x353.jpg`, `${CDN}/${g.appid}/library_hero.jpg`];
@@ -35,9 +36,11 @@ const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>'
 // local Steam cache, CDN variants, the store API's own image URL, text placeholder.
 function artImg(g, kind) {
   const wideFirst = kind === 'wide';
+  // The decoy has no Steam art; only its own (Roblox) images apply.
+  const steam = (list) => (g.decoy ? [] : list);
   const sources = (wideFirst
-    ? [g.art, ...cdnWide(g), g.portrait, ...cdnPortrait(g)]
-    : [g.portrait, ...cdnPortrait(g), g.art, ...cdnWide(g)]
+    ? [g.art, ...steam(cdnWide(g)), g.portrait, ...steam(cdnPortrait(g))]
+    : [g.portrait, ...steam(cdnPortrait(g)), g.art, ...steam(cdnWide(g))]
   ).filter(Boolean);
 
   const box = document.createElement('div');
@@ -68,13 +71,14 @@ function artImg(g, kind) {
   img.onerror = async () => {
     tried++;
     if (tried < sources.length) return void (img.src = sources[tried]);
-    if (askedStore) return placeholder();
+    if (askedStore || g.decoy) return placeholder();
     askedStore = true;
     const url = await window.api.storeArt(g.appid);
     if (url) img.src = url;
     else placeholder();
   };
-  img.src = sources[0];
+  if (sources.length) img.src = sources[0];
+  else queueMicrotask(placeholder); // runs once the box is attached
   return box;
 }
 
@@ -132,15 +136,15 @@ function showGame(g) {
     <div class="hero"></div>
     <div class="info">
       <h1>${esc(g.name)}</h1>
-      <div class="by">By <b>@${esc(state.persona)}</b></div>
+      <div class="by">By <b>${g.by ? esc(g.by) : '@' + esc(state.persona)}</b></div>
       <button class="play">${ICON_PLAY}Play</button>
       <div class="rate"><span class="pill">${ICON_UP}${likes(g)}%</span><span class="pill">${ICON_USER}${fmtCount(players(g))}</span></div>
     </div></div>
     <div class="facts">
       <div><small>Active</small><b>${fmtCount(players(g))}</b></div>
       <div><small>Favorites</small><b>${fmtCount(players(g) * 3)}</b></div>
-      <div><small>Visits</small><b>${visits(g)}M+</b></div>
-      <div><small>Server Size</small><b>${2 + (hash(g.appid + 3) % 30)}</b></div>
+      <div><small>Visits</small><b>${visits(g)}</b></div>
+      <div><small>Server Size</small><b>${serverSize(g)}</b></div>
     </div></div>`);
   page.querySelector('.hero').appendChild(artImg(g, 'wide'));
   page.querySelector('.back').onclick = showHome;
@@ -155,7 +159,7 @@ function play(g) {
   dlgTitle.textContent = 'Starting Roblox...';
   overlay.hidden = false;
   setTimeout(() => { dlgTitle.textContent = 'Joining experience...'; }, 1600);
-  setTimeout(() => window.api.launch(g.appid), 2600);
+  setTimeout(() => window.api.launch(g.decoy ? g.decoyTarget : g.appid), 2600);
   setTimeout(() => { overlay.hidden = true; launching = false; }, 5200);
 }
 
